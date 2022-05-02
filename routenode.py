@@ -167,6 +167,11 @@ def start_func_LSA(message, update_interval):
                                                                                                                           xxx=seq,
                                                                                                                           from_port=origin_port))
             if topology_changed:
+                timestamp = round(time(), 3)
+                print("[", timestamp, "] topology update:")
+                for tup in sorted(all_edges_pair.keys()):
+                    if tup[0] < tup[1]:
+                        print("edge {fromN} -> {toN} distance is {dist}".format(fromN=tup[0], toN=tup[1], dist=all_edges_pair[tup]))
                 dijkstra()
                 topology_changed = False
 
@@ -184,14 +189,18 @@ def start_func_LSA(message, update_interval):
 
 
 def update_every_routing_interval(routing_interval):
-    pass
+    while True:
+        sleep(routing_interval)
+        LOCK.acquire()
+        dijkstra()
+        LOCK.release()
 
 
-"""
-update dv{},  do not need to acquire lock
-"""
 def dijkstra():
-    global N_prime, dv
+    """
+    update dv{},  do not need to acquire lock
+    """
+    global N_prime, dv, next_hop
     N_prime = [node_port]
     dv = {node_port: 0}
     for tup_port in all_edges_pair.keys():
@@ -199,7 +208,7 @@ def dijkstra():
             dv[tup_port[1]] = all_edges_pair[tup_port]
 
     for tup_port in all_edges_pair.keys():
-        if tup_port[0] != node_port and tup_port[1] != node_port and tup_port[0] not in dv.keys():
+        if tup_port[0] != node_port and tup_port[1] != node_port and tup_port[0] not in dv.keys():  # not directly connected node
             dv[tup_port[0]] = np.inf
 
     while len(N_prime) < len(dv.keys()):
@@ -212,10 +221,23 @@ def dijkstra():
 
         N_prime.append(min_port)
         for tup, dis in all_edges_pair.items():
-            v = tup[0]
-            w = tup[1]
-            if v == min_port and w not in N_prime:
-                dv[tup[1]] = min(dv[w], dv[min_port]+dis)
+            w = tup[0]
+            v = tup[1]
+            if w == min_port and v not in N_prime:
+                if dv[min_port] + dis < dv[v]:
+                    next_hop[v] = next_hop[w]  # w = min_port
+                dv[v] = min(dv[v], dv[min_port]+dis)
+
+    timestamp = round(time(), 3)
+    print("[", timestamp, "] Node {port} Routing Table".format(port=node_port))
+    for to_port in sorted(dv.keys()):
+        if to_port != node_port:
+            if next_hop[to_port] == to_port:
+                print("- ({distance}) -> Node {to_port}".format(distance=dv[to_port], to_port=to_port))
+            else:
+                print("- ({distance}) -> Node {to_port} ; Next hop -> Node {next_port}".format(distance=dv[to_port],
+                                                                                               to_port=to_port,
+                                                                                               next_port=next_hop[to_port]))
 
     return 0
 
