@@ -45,7 +45,7 @@ def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_cha
     if algo == "dv":
         if last:
             if cost_change is not None:
-                timer = threading.Timer(30, cost_change_fuc, (cost_change, ))
+                timer = threading.Timer(30, cost_change_fuc, (cost_change, "dv"))
                 timer.setDaemon(True)
                 timer.start()
             send_count = 1
@@ -67,7 +67,7 @@ def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_cha
 
         if last:
             if cost_change is not None:
-                timer = threading.Timer(30, cost_change_func_ls, (cost_change, ))
+                timer = threading.Timer(30*1.2, cost_change_fuc, (cost_change, "ls"))
                 timer.setDaemon(True)
                 timer.start()
             sendLSA()
@@ -183,6 +183,13 @@ def start_func_LSA(message, update_interval):
                 if neighbor != node_port:
                     sendSocket.sendto(message, (gethostbyname(gethostname()), neighbor))
             sendSocket.close()
+
+    if head == HEAD2:
+        from_port = int(modifiedMessage[0])
+        init_neighbors[from_port] = int(modifiedMessage[1])
+        timestamp = round(time(), 3)
+        print("[", timestamp, "] Link value message received at Node {portv} from Node {portx}\n".format(portv=node_port,
+                                                                                                         portx=from_port))
 
     LOCK.release()
     return 0
@@ -340,7 +347,7 @@ def sendLSA():
     return 0
 
 
-def cost_change_fuc(cost_change):
+def cost_change_fuc(cost_change, algo):
     LOCK.acquire()
     heighest_neighbor_port = sorted(init_neighbors.keys())[-1]
     if heighest_neighbor_port == node_port:
@@ -355,15 +362,17 @@ def cost_change_fuc(cost_change):
 
     message = HEAD2 + ";" + str(node_port) + ";" + str(cost_change)
     sendSocket = socket(AF_INET, SOCK_DGRAM)
-    if heighest_neighbor_port != node_port:
-        sendSocket.sendto(message.encode(), (gethostbyname(gethostname()), int(heighest_neighbor_port)))
-        timestamp = round(time(), 3)
-        print("[", timestamp, "] Link value message sent from Node {portx} to Node {portv}\n".format(portx=node_port,
+    sendSocket.sendto(message.encode(), (gethostbyname(gethostname()), int(heighest_neighbor_port)))
+    timestamp = round(time(), 3)
+    print("[", timestamp, "] Link value message sent from Node {portx} to Node {portv}\n".format(portx=node_port,
                                                                                                      portv=heighest_neighbor_port))
 
     sendSocket.close()
-    sendDv()
+    if algo == "dv":
+        sendDv()
+
     LOCK.release()
+    return 0
 
 def cost_change_func_ls(cost_change):
     pass
@@ -384,7 +393,7 @@ if __name__ == "__main__":
     #p = ["", "ls", "r", "2", "1111", "2222", "1", "3333", "50"]
     #p = ["", "ls", "r", "2", "2222", "1111", "1", "3333", "2"]
     #p = ["", "ls", "r", "2", "3333", "1111", "50", "2222", "2", "4444", "5"]
-    p = ["", "ls", "r", "2", "4444", "2222", "8", "3333", "5", "last"]
+    p = ["", "ls", "r", "2", "4444", "2222", "8", "3333", "5", "last", "1"]
     if len(p) < 5:
         print("Too less parameters! \n")
         exit(1)
