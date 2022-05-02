@@ -6,6 +6,8 @@ import time
 from socket import *
 from time import *
 
+import numpy as np
+
 BUFFER = 2048
 ROUTING_INTERVAL = 30
 HEAD1 = "1"  # routing table change
@@ -20,7 +22,7 @@ send_count = 0
 
 other_ports_lsa = {}
 all_edges_pair = {}
-N_prime = {}
+N_prime = []
 rcv_count = 0
 
 LOCK = threading.Lock()
@@ -166,7 +168,31 @@ def start_func_LSA(message, update_interval):
 update dv{}
 """
 def dijkstra():
-    pass
+    global N_prime, dv
+    N_prime = [node_port]
+    dv = {node_port: 0}
+    for tup_port in all_edges_pair.keys():
+        if tup_port[0] == node_port:
+            dv[tup_port[1]] = all_edges_pair[tup_port]
+
+    for tup_port in all_edges_pair.keys():
+        if tup_port[0] != node_port and tup_port[1] != node_port and tup_port[0] not in dv.keys():
+            dv[tup_port[0]] = np.inf
+
+    while len(N_prime) < len(dv.keys()):
+        min_dw = np.inf
+        min_port = None
+        for to_port, dw in dv.items():
+            if to_port not in N_prime and dw < min_dw:
+                min_dw = dw
+                min_port = to_port
+
+        N_prime.append(min_port)
+        for tup, dis in all_edges_pair:
+            if tup[0] == min_port and tup[1] not in N_prime:
+                dv[tup[1]] = min(dv[tup[1]], dv[min_port]+dis)
+
+    return 0
 
 
 def periodic_update(update_interval):
@@ -278,10 +304,20 @@ def cost_change_func_ls(cost_change):
 
 if __name__ == "__main__":
     # p = sys.argv
+    """
+    dv test
+    """
     #p = ["", "dv", "r", "1111", "2222", "1", "3333", "50"]
     #p = ["", "dv", "r", "2222", "1111", "1", "3333", "2", "4444", "8"]
     #p = ["", "dv", "r", "3333", "1111", "50", "2222", "2", "4444", "5"]
-    p = ["", "dv", "r", "4444", "2222", "8", "3333", "5", "last", "1"]
+    #p = ["", "dv", "r", "4444", "2222", "8", "3333", "5", "last", "1"]
+    """
+    ls test
+    """
+    #p = ["", "ls", "r", "2", "1111", "2222", "1", "3333", "50"]
+    #p = ["", "ls", "r", "2", "2222", "1111", "1", "3333", "2"]
+    #p = ["", "ls", "r", "2", "3333", "1111", "50", "2222", "2", "4444", "5"]
+    p = ["", "ls", "r", "2", "4444", "2222", "8", "3333", "5", "last"]
     if len(p) < 5:
         print("Too less parameters! \n")
         exit(1)
