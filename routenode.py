@@ -23,13 +23,13 @@ send_count = 0
 other_ports_lsa = {}
 all_edges_pair = {}
 N_prime = []
-rcv_count = 0
+periodic_update_start = 0
 
 LOCK = threading.Lock()
 
 
 def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_change):
-    global node_port, init_neighbors, dv, next_hop, send_count, rcv_count
+    global node_port, init_neighbors, dv, next_hop, send_count, periodic_update_start
     init_neighbors = neighbor_ports
     for neighbor, edge in neighbor_ports.items():
         dv[neighbor] = edge
@@ -48,7 +48,7 @@ def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_cha
                 timer.setDaemon(True)
                 timer.start()
             send_count = 1
-            sendDv()
+            sendDv()  # doesn't acquire a lock, concurrent risk
 
         while True:
             message, client_addr = socketServer.recvfrom(BUFFER)
@@ -70,15 +70,15 @@ def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_cha
 
         while True:
             message, client_addr = socketServer.recvfrom(BUFFER)
-            t = threading.Thread(target=start_func_LSA, args=(message, update_interval))
+            t = threading.Thread(target=start_func_LSA, args=(message, int(update_interval)))
             t.setDaemon(True)
             t.start()
 
-            if rcv_count == 0:
-                t1 = threading.Thread(target=periodic_update, args=(update_interval, ))
+            if periodic_update_start == 0:
+                t1 = threading.Thread(target=periodic_update, args=(int(update_interval), ))
                 t1.setDaemon(True)
                 t1.start()
-            rcv_count += 1
+                periodic_update_start += 1
 
 
 def start_fuc(message):
@@ -146,7 +146,7 @@ def start_func_LSA(message, update_interval):
                 all_edges_pair[(origin_port, to_port)] = dist
                 all_edges_pair[(to_port, origin_port)] = dist
 
-            timestamp = round(time.time(), 3)
+            timestamp = round(time(), 3)
             print("[", timestamp, "] LSA of node {port} with sequence number {xxx} received from Node {from_port}".format(port=node_port,
                                                                                                                           xxx=seq,
                                                                                                                           from_port=origin_port))
@@ -165,7 +165,7 @@ def start_func_LSA(message, update_interval):
     return 0
 
 """
-update dv{}
+update dv{},  do not need to acquire lock
 """
 def dijkstra():
     global N_prime, dv
@@ -188,9 +188,11 @@ def dijkstra():
                 min_port = to_port
 
         N_prime.append(min_port)
-        for tup, dis in all_edges_pair:
-            if tup[0] == min_port and tup[1] not in N_prime:
-                dv[tup[1]] = min(dv[tup[1]], dv[min_port]+dis)
+        for tup, dis in all_edges_pair.items():
+            v = tup[0]
+            w = tup[1]
+            if v == min_port and w not in N_prime:
+                dv[tup[1]] = min(dv[w], dv[min_port]+dis)
 
     return 0
 
@@ -270,7 +272,27 @@ def sendDv():
 
 
 def sendLSA():
-    pass
+    seq = time() * 10000000
+    message = "" + HEAD1 + ";" + str(node_port) + ";" + str(seq)
+    LOCK.acquire()
+    for neighbor in init_neighbors:
+        if neighbor != node_port:
+            message = message + ";"
+            message = message + str(neighbor) + " " + str(init_neighbors[neighbor])
+
+    sendSocket = socket(AF_INET, SOCK_DGRAM)
+    for neighbor in init_neighbors:
+        if neighbor != node_port:
+            sendSocket.sendto(message.encode(), (gethostbyname(gethostname()), neighbor))
+            print("[", round(seq / 10000000, 3),
+                  "] LSA of Node {from_port} with sequence number {seq} sent to Node {to_port}".format(from_port=node_port,
+                                                                                                       seq=seq,
+                                                                                                       to_port=neighbor))
+
+    sendSocket.close()
+    LOCK.release()
+
+    return 0
 
 
 def cost_change_fuc(cost_change):
