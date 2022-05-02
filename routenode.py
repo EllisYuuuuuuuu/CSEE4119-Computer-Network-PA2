@@ -24,6 +24,7 @@ other_ports_lsa = {}
 all_edges_pair = {}
 N_prime = []
 periodic_update_start = 0
+topology_changed = False
 
 LOCK = threading.Lock()
 
@@ -51,10 +52,13 @@ def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_cha
             sendDv()  # doesn't acquire a lock, concurrent risk
 
         while True:
-            message, client_addr = socketServer.recvfrom(BUFFER)
-            t = threading.Thread(target=start_fuc, args=(message,))
-            t.setDaemon(True)
-            t.start()
+            try:
+                message, client_addr = socketServer.recvfrom(BUFFER)
+                t = threading.Thread(target=start_fuc, args=(message,))
+                t.setDaemon(True)
+                t.start()
+            except InterruptedError:
+                return 0
 
     elif algo == "ls":
         for neighbor, edge in neighbor_ports.items():
@@ -69,16 +73,22 @@ def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_cha
             sendLSA()
 
         while True:
-            message, client_addr = socketServer.recvfrom(BUFFER)
-            t = threading.Thread(target=start_func_LSA, args=(message, int(update_interval)))
-            t.setDaemon(True)
-            t.start()
+            try:
+                message, client_addr = socketServer.recvfrom(BUFFER)
+                t = threading.Thread(target=start_func_LSA, args=(message, int(update_interval)))
+                t.setDaemon(True)
+                t.start()
 
-            if periodic_update_start == 0:
-                t1 = threading.Thread(target=periodic_update, args=(int(update_interval), ))
-                t1.setDaemon(True)
-                t1.start()
-                periodic_update_start += 1
+                if periodic_update_start == 0:
+                    t1 = threading.Thread(target=periodic_update, args=(int(update_interval), ))
+                    t1.setDaemon(True)
+                    t1.start()
+                    t2 = threading.Thread(target=update_every_routing_interval, args=(int(ROUTING_INTERVAL),))
+                    t2.setDaemon(True)
+                    t2.start()
+                    periodic_update_start += 1
+            except InterruptedError:
+                return 0
 
 
 def start_fuc(message):
@@ -120,6 +130,7 @@ def start_fuc(message):
 
 
 def start_func_LSA(message, update_interval):
+    global topology_changed
     LOCK.acquire()
     modifiedMessage = message.decode().split(';')
     head = modifiedMessage[0]
@@ -143,6 +154,11 @@ def start_func_LSA(message, update_interval):
                     continue
                 to_port = int(modifiedMessage[j].split()[0])
                 dist = int(modifiedMessage[j].split()[1])
+                """
+                if topology table is changed
+                """
+                if (origin_port, to_port) not in all_edges_pair.keys() or all_edges_pair[(origin_port, to_port)] != dist:
+                    topology_changed = True
                 all_edges_pair[(origin_port, to_port)] = dist
                 all_edges_pair[(to_port, origin_port)] = dist
 
@@ -150,7 +166,9 @@ def start_func_LSA(message, update_interval):
             print("[", timestamp, "] LSA of node {port} with sequence number {xxx} received from Node {from_port}".format(port=node_port,
                                                                                                                           xxx=seq,
                                                                                                                           from_port=origin_port))
-            dijkstra()
+            if topology_changed:
+                dijkstra()
+                topology_changed = False
 
             """
             forwarding message
@@ -163,6 +181,11 @@ def start_func_LSA(message, update_interval):
 
     LOCK.release()
     return 0
+
+
+def update_every_routing_interval(routing_interval):
+    pass
+
 
 """
 update dv{},  do not need to acquire lock
@@ -219,7 +242,7 @@ def periodic_update(update_interval):
                                                                                                                seq=seq,
                                                                                                                to_port=neighbor))
 
-            dijkstra()
+            # dijkstra()
             LOCK.release()
         except InterruptedError:
             break
