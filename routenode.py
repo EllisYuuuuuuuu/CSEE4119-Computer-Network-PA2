@@ -379,21 +379,21 @@ def cost_change_func_ls(cost_change):
 
 
 if __name__ == "__main__":
-    # p = sys.argv
+    p = sys.argv
     """
     dv test
     """
-    #p = ["", "dv", "r", "1111", "2222", "1", "3333", "50"]
-    #p = ["", "dv", "r", "2222", "1111", "1", "3333", "2", "4444", "8"]
-    #p = ["", "dv", "r", "3333", "1111", "50", "2222", "2", "4444", "5"]
-    #p = ["", "dv", "r", "4444", "2222", "8", "3333", "5", "last", "1"]
+    #p = ["", "dv", "r", "2", "1111", "2222", "1", "3333", "50"]
+    #p = ["", "dv", "r", "2", "2222", "1111", "1", "3333", "2", "4444", "8"]
+    #p = ["", "dv", "r", "2", "3333", "1111", "50", "2222", "2", "4444", "5"]
+    #p = ["", "dv", "r", "2", "4444", "2222", "8", "3333", "5", "last", "1"]
     """
     ls test
     """
     #p = ["", "ls", "r", "2", "1111", "2222", "1", "3333", "50"]
     #p = ["", "ls", "r", "2", "2222", "1111", "1", "3333", "2"]
     #p = ["", "ls", "r", "2", "3333", "1111", "50", "2222", "2", "4444", "5"]
-    p = ["", "ls", "r", "2", "4444", "2222", "8", "3333", "5", "last", "1"]
+    #p = ["", "ls", "r", "2", "4444", "2222", "8", "3333", "5", "last", "1"]
     if len(p) < 5:
         print("Too less parameters! \n")
         exit(1)
@@ -413,18 +413,18 @@ if __name__ == "__main__":
         print("Mode must be 'r' or 'p'! got '{mode}'\n".format(mode=mode))
         exit(1)
 
-    local_port = None
-    update_interval = None
-    if start == 4:
-        local_port = p[3]
-    elif start == 5:
-        update_interval = p[3]
-        local_port = p[4]
+    # local_port = None
+    # update_interval = None
+    # if start == 4:
+    #     local_port = p[4]
+    # elif start == 5:
+    update_interval = p[3]
+    local_port = p[4]
 
     last = False
     cost_change = None
     neighbor_ports = {int(local_port): 0}
-    for i in range(start, len(p), 2):
+    for i in range(5, len(p), 2):
         if p[i] == "last":  # indication of last node
             last = True
             if i + 1 >= len(p):
