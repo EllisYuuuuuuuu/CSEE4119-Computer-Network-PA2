@@ -32,10 +32,11 @@ LOCK = threading.Lock()
 def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_change):
     global node_port, init_neighbors, dv, next_hop, send_count, periodic_update_start
     init_neighbors = neighbor_ports
+    next_hop[local_port] = local_port
     for neighbor, edge in neighbor_ports.items():
         dv[neighbor] = edge
-        if neighbor != local_port:
-            next_hop[neighbor] = neighbor
+        # if neighbor != local_port:
+        next_hop[neighbor] = neighbor
 
     node_ip = gethostbyname(gethostname())
     node_port = local_port
@@ -54,7 +55,7 @@ def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_cha
         while True:
             try:
                 message, client_addr = socketServer.recvfrom(BUFFER)
-                t = threading.Thread(target=start_fuc, args=(message,))
+                t = threading.Thread(target=start_fuc, args=(message, mode))
                 t.setDaemon(True)
                 t.start()
             except InterruptedError:
@@ -91,7 +92,7 @@ def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_cha
                 return 0
 
 
-def start_fuc(message):
+def start_fuc(message, mode):
     LOCK.acquire()
     modifiedMessage = message.decode().split(';')
     head = modifiedMessage[0]
@@ -115,15 +116,25 @@ def start_fuc(message):
                                                                                             toN=node_port))
         update(from_port, neighbor_dv)
 
-    if head == HEAD2:  # link cost change
+    if head == HEAD2:  # link cost change, this should force the node replace dv with next hop equal to from_port
         from_port = int(modifiedMessage[0])
-        init_neighbors[from_port] = int(modifiedMessage[1])
+        new_edge = int(modifiedMessage[1])
+        original_edge = init_neighbors[from_port]
+        init_neighbors[from_port] = new_edge
+
         timestamp = round(time(), 3)
         print("[", timestamp, "] Link value message received at Node {portv} from Node {portx}\n".format(portv=node_port,
-                                                                                                         portx=from_port))
-        if init_neighbors[from_port] < dv[from_port]:  # new edge is smaller than the original min path
-            dv[from_port] = init_neighbors[from_port]
-            sendDv()
+                                                                                                 portx=from_port))
+        # # wait until the sendDV message from from_port to change this
+        # if init_neighbors[from_port] < dv[from_port]:  # new edge is smaller than the original min path
+        #     dv[from_port] = init_neighbors[from_port]
+        #     sendDv()
+
+        for to_port in dv.keys():
+            if next_hop[to_port] == from_port:
+                dv[to_port] = dv[to_port] - original_edge + new_edge
+
+        sendDv()
 
     LOCK.release()
     return 0
@@ -291,20 +302,26 @@ def update(from_port, neighbor_dv):
             if init_neighbors[from_port] + neighbor_dv[port] < dv[port]:  # from from_port to here
                 next_hop[port] = from_port
                 isChanged = True
-            dv[port] = min(init_neighbors[from_port] + neighbor_dv[port], dv[port])
+                dv[port] = init_neighbors[from_port] + neighbor_dv[port]
+            if next_hop[port] == from_port and dv[port] != init_neighbors[from_port] + neighbor_dv[port]:
+                dv[port] = init_neighbors[from_port] + neighbor_dv[port]
+                isChanged = True
 
-    if isChanged or send_count == 0:
+    if isChanged or send_count == 0:  # if never send or being changed
         send_count += 1
         sendDv()
 
     sorted(dv.keys())
     timestamp = round(time(), 3)
     print("[", timestamp, "] Node {node} Routing Table\n".format(node=node_port))
-    for port in sorted(dv.keys()):
-        if port != node_port:
-            print("- {distance} -> Node {toPort}; Next hop -> Node {nexthop}\n".format(distance=dv[port],
-                                                                                       toPort=port,
-                                                                                       nexthop=next_hop[port]))
+    for to_port in sorted(dv.keys()):
+        if to_port != node_port:
+            if to_port == next_hop[to_port]:
+                print("- ({distance}) -> Node {to_port}".format(distance=dv[to_port], to_port=to_port))
+            else:
+                print("- ({distance}) -> Node {to_Port}; Next hop -> Node {nexthop}".format(distance=dv[to_port],
+                                                                                            to_Port=to_port,
+                                                                                            nexthop=next_hop[to_port]))
 
 
 def sendDv():
@@ -349,23 +366,33 @@ def sendLSA():
 
 def cost_change_fuc(cost_change, algo):
     LOCK.acquire()
-    heighest_neighbor_port = sorted(init_neighbors.keys())[-1]
-    if heighest_neighbor_port == node_port:
-        heighest_neighbor_port = sorted(init_neighbors.keys())[-2]
-    init_neighbors[heighest_neighbor_port] = int(cost_change)
+    cost_change = int(cost_change)
+    highest_neighbor_port = sorted(init_neighbors.keys())[-1]
+    if highest_neighbor_port == node_port:
+        highest_neighbor_port = sorted(init_neighbors.keys())[-2]
+
+    origin_edge = init_neighbors[highest_neighbor_port]
+    init_neighbors[highest_neighbor_port] = int(cost_change)
     timestamp = round(time(), 3)
     print("[", timestamp, "] Node {port}-{xxxx} cost updated to {value}\n".format(port=node_port,
-                                                                                  xxxx=heighest_neighbor_port,
+                                                                                  xxxx=highest_neighbor_port,
                                                                                   value=cost_change))
-    if dv[heighest_neighbor_port] > int(cost_change):
-        dv[heighest_neighbor_port] = int(cost_change)
+    # if dv[highest_neighbor_port] > int(cost_change):
+    #     dv[highest_neighbor_port] = int(cost_change)
+    """
+    all the nodes reached through highest_neighbor_port's shortest distance will change
+    """
+    for to_port in dv.keys():
+        if next_hop[to_port] == highest_neighbor_port:
+            # change the dv with next hop equals to the highest_neighbour_port
+            dv[to_port] = dv[to_port] + cost_change - origin_edge
 
     message = HEAD2 + ";" + str(node_port) + ";" + str(cost_change)
     sendSocket = socket(AF_INET, SOCK_DGRAM)
-    sendSocket.sendto(message.encode(), (gethostbyname(gethostname()), int(heighest_neighbor_port)))
+    sendSocket.sendto(message.encode(), (gethostbyname(gethostname()), int(highest_neighbor_port)))
     timestamp = round(time(), 3)
     print("[", timestamp, "] Link value message sent from Node {portx} to Node {portv}\n".format(portx=node_port,
-                                                                                                     portv=heighest_neighbor_port))
+                                                                                                 portv=highest_neighbor_port))
 
     sendSocket.close()
     if algo == "dv":
@@ -387,6 +414,12 @@ if __name__ == "__main__":
     #p = ["", "dv", "r", "2", "2222", "1111", "1", "3333", "2", "4444", "8"]
     #p = ["", "dv", "r", "2", "3333", "1111", "50", "2222", "2", "4444", "5"]
     #p = ["", "dv", "r", "2", "4444", "2222", "8", "3333", "5", "last", "1"]
+    """
+    dv test 2
+    """
+    #p = ["", "dv", "r", "2", "1111", "2222", "1", "3333", "50"]
+    #p = ["", "dv", "r", "2", "2222", "1111", "1", "3333", "2"]
+    #p = ["", "dv", "r", "2", "3333", "1111", "50", "2222", "2", "last", "60"]
     """
     ls test
     """
