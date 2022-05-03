@@ -4,10 +4,12 @@ Solution working. I use the main thread to receive message from other router, on
 
 For test case on pdf assignment:
 
+```
 $ python3 ./routenode.py dv r [any-num] 1111 2222 1 3333 50
 $ python3 ./routenode.py dv r [any-num] 2222 1111 1 3333 2 4444 8
 $ python3 ./routenode.py dv r [any-num] 3333 1111 50 2222 2 4444 5
 $ python3 ./routenode.py dv r [any-num] 4444 2222 8 3333 5 last 1
+```
 
 It can produce the expected result on 5.4.0-1072-gcp (need python3 and numpy installed)
 
@@ -19,9 +21,11 @@ Solution working. I Use the timestamp*10000000 which is an integer as the LSA se
 
 For test case on pdf assignment:
 
+```
 $ python3 ./routenode.py ls r 2 1111 2222 1 3333 50
 $ python3 ./routenode.py ls r 2 2222 1111 1 3333 2 4444 8
 $ python3 ./routenode.py ls r 2 3333 1111 50 2222 2 4444 5
 $ python3 ./routenode.py ls r 2 4444 2222 8 3333 5 last 1
+```
 
 It can produce the expected result on 5.4.0-1072-gcp (need python3 and numpy installed)
