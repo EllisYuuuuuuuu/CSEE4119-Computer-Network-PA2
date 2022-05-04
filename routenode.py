@@ -46,11 +46,11 @@ def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_cha
     if algo == "dv":
         if last:
             if cost_change is not None:
-                timer = threading.Timer(30, cost_change_fuc, (cost_change, "dv"))
+                timer = threading.Timer(30, cost_change_fuc, (cost_change, "dv", mode))
                 timer.setDaemon(True)
                 timer.start()
             send_count = 1
-            sendDv()  # doesn't acquire a lock, concurrent risk
+            sendDv(mode)  # doesn't acquire a lock, concurrent risk
 
         while True:
             try:
@@ -68,7 +68,7 @@ def main(algo, mode, update_interval, local_port, neighbor_ports, last, cost_cha
 
         if last:
             if cost_change is not None:
-                timer = threading.Timer(30*1.2, cost_change_fuc, (cost_change, "ls"))
+                timer = threading.Timer(30*1.2, cost_change_fuc, (cost_change, "ls", None))
                 timer.setDaemon(True)
                 timer.start()
             sendLSA()
@@ -114,7 +114,7 @@ def start_fuc(message, mode):
         timestamp = round(time(), 3)
         print("[", timestamp, "] Message received at Node {toN} from Node {fromN}\n".format(fromN=from_port,
                                                                                             toN=node_port))
-        update(from_port, neighbor_dv)
+        update(from_port, neighbor_dv, mode)
 
     if head == HEAD2:  # link cost change, this should force the node replace dv with next hop equal to from_port
         from_port = int(modifiedMessage[0])
@@ -134,7 +134,7 @@ def start_fuc(message, mode):
             if next_hop[to_port] == from_port:
                 dv[to_port] = dv[to_port] - original_edge + new_edge
 
-        sendDv()
+        sendDv(mode)
 
     LOCK.release()
     return 0
@@ -289,7 +289,7 @@ def periodic_update(update_interval):
     return 0
 
 
-def update(from_port, neighbor_dv):
+def update(from_port, neighbor_dv, mode):
     global dv, send_count, next_hop
     isChanged = False
 
@@ -309,7 +309,7 @@ def update(from_port, neighbor_dv):
 
     if isChanged or send_count == 0:  # if never send or being changed
         send_count += 1
-        sendDv()
+        sendDv(mode)
 
     sorted(dv.keys())
     timestamp = round(time(), 3)
@@ -324,18 +324,35 @@ def update(from_port, neighbor_dv):
                                                                                             nexthop=next_hop[to_port]))
 
 
-def sendDv():
-    message = HEAD1 + ";" + str(node_port) + ";"
-    for key in dv.keys():
-        message = message + str(key) + " " + str(dv[key]) + ";"
-
+def sendDv(mode):
     sendSocket = socket(AF_INET, SOCK_DGRAM)
-    for neighbor in init_neighbors.keys():
-        if neighbor != node_port:
-            timestamp = round(time(), 3)
-            print("[", timestamp, "] Message sent from Node {fromN} to Node {toN}\n".format(fromN=node_port,
-                                                                                            toN=neighbor))
-            sendSocket.sendto(message.encode(), (gethostbyname(gethostname()), int(neighbor)))
+
+    if mode == "p":
+        for neighbor in init_neighbors.keys():
+            if neighbor != node_port:
+                timestamp = round(time(), 3)
+                print("[", timestamp, "] Message sent from Node {fromN} to Node {toN}\n".format(fromN=node_port,
+                                                                                                toN=neighbor))
+                message = HEAD1 + ";" + str(node_port) + ";"
+                for key in dv.keys():
+                    temp_dv = dv[key]
+                    if key != neighbor and next_hop[key] == neighbor:
+                        temp_dv = 1000000
+                    message = message + str(key) + " " + str(temp_dv) + ";"
+
+                sendSocket.sendto(message.encode(), (gethostbyname(gethostname()), int(neighbor)))
+
+    else:  # mode = "r"
+        message = HEAD1 + ";" + str(node_port) + ";"
+        for key in dv.keys():
+            message = message + str(key) + " " + str(dv[key]) + ";"
+
+        for neighbor in init_neighbors.keys():
+            if neighbor != node_port:
+                timestamp = round(time(), 3)
+                print("[", timestamp, "] Message sent from Node {fromN} to Node {toN}\n".format(fromN=node_port,
+                                                                                                toN=neighbor))
+                sendSocket.sendto(message.encode(), (gethostbyname(gethostname()), int(neighbor)))
 
     sendSocket.close()
 
@@ -364,7 +381,7 @@ def sendLSA():
     return 0
 
 
-def cost_change_fuc(cost_change, algo):
+def cost_change_fuc(cost_change, algo, mode):
     LOCK.acquire()
     cost_change = int(cost_change)
     highest_neighbor_port = sorted(init_neighbors.keys())[-1]
@@ -396,7 +413,7 @@ def cost_change_fuc(cost_change, algo):
 
     sendSocket.close()
     if algo == "dv":
-        sendDv()
+        sendDv(mode)
 
     LOCK.release()
     return 0
@@ -420,6 +437,13 @@ if __name__ == "__main__":
     #p = ["", "dv", "r", "2", "1111", "2222", "1", "3333", "50"]
     #p = ["", "dv", "r", "2", "2222", "1111", "1", "3333", "2"]
     #p = ["", "dv", "r", "2", "3333", "1111", "50", "2222", "2", "last", "60"]
+    """
+    dv test 3
+    """
+    #p = ["", "dv", "p", "2", "1111", "2222", "1", "3333", "50"]
+    #p = ["", "dv", "p", "2", "2222", "1111", "1", "3333", "2", "4444", "8"]
+    #p = ["", "dv", "p", "2", "3333", "1111", "50", "2222", "2", "4444", "5"]
+    #p = ["", "dv", "p", "2", "4444", "2222", "8", "3333", "5", "last", "1"]
     """
     ls test
     """
